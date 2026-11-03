@@ -101,10 +101,14 @@ def probe_models(force: bool = False, ttl: int = 900) -> dict[str, dict[str, Any
 
 
 def chain(stage: str) -> list[str]:
-    """Configured chain, with models the probe marked as permanently unavailable moved last."""
+    """Configured chain reordered by the probe: answering models first, then the overloaded or
+    unknown ones (they may recover), and models with no quota / not found last."""
     models = list(settings.models[stage])
-    bad = {m for m, r in _probe.items() if r.get("status") in ("quota", "not_found", "forbidden")}
-    return [m for m in models if m not in bad] + [m for m in models if m in bad]
+
+    def rank(m: str) -> int:
+        st = _probe.get(m, {}).get("status")
+        return 0 if st == "ok" else 2 if st in ("quota", "not_found", "forbidden") else 1
+    return sorted(models, key=rank)  # stable: keeps the configured order inside each group
 
 
 def call_json(stage: str, contents: list, schema: Type[T], system: str | None = None,
