@@ -6,6 +6,7 @@ edit) the checklist before students can submit."""
 from __future__ import annotations
 
 import pathlib
+import re
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -19,6 +20,8 @@ Metric = Literal[
     "table_caption", "references_min", "references_order", "none"]
 
 METRICS: tuple[str, ...] = Metric.__args__  # type: ignore[attr-defined]
+NUMERIC = {"margin_left_cm", "margin_right_cm", "margin_top_cm", "margin_bottom_cm", "font_size_pt",
+           "line_spacing", "first_line_indent_cm", "page_count", "references_min"}
 
 
 class RuleLLM(BaseModel):
@@ -93,4 +96,12 @@ def normalize(cl: Checklist) -> Checklist:
             r.check = "ai"
         if r.items:
             r.items = [x.strip() for x in r.items if x and x.strip()]
+        if r.metric in NUMERIC and r.min is None and r.max is None and r.value:
+            try:  # «3», «1,25», «25-30» -> min/max, so the teacher sees the numbers in the editor
+                nums = [float(x.replace(",", ".")) for x in re.findall(r"\d+(?:[.,]\d+)?", r.value)]
+                if nums:
+                    r.min, r.max = min(nums), max(nums)
+                    r.value = None
+            except ValueError:
+                pass
     return cl
