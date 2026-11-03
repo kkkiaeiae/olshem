@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="kk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Өлшем — жазбаша жұмыстарды алдын ала тексеру</title>
+<meta name="description" content="Өлшем — оқытушы талаптары бойынша жазбаша жұмыстарды ЖИ арқылы алдын ала тексеру жүйесі. ЕҰУ.">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+<script>(function(){try{var t=localStorage.getItem('olshem-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Негізгі мазмұнға өту</a>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#/" aria-label="Өлшем — басты бет">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="6" width="26" height="20" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 26v-5M13 26v-8M18 26v-5M23 26v-8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="23" cy="12" r="2.2" fill="currentColor"/></svg>
+      <span><b>Өлшем</b><small>Әр жұмысқа — бір өлшем.</small></span>
+    </a>
+    <nav class="top-nav" aria-label="Жоғарғы мәзір">
+      <span id="demoBadge" class="badge warn" hidden title="Сақталған нәтижелер көрсетіледі">Демо режимі</span>
+      <span id="roleBadge" class="badge" hidden></span>
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="Түнгі / күндізгі режим" title="Тақырыпты ауыстыру"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
+    </nav>
+  </div>
+</header>
+<main id="main" tabindex="-1"><div id="view" class="wrap" aria-live="polite"></div></main>
+<footer class="foot wrap">
+  <p>ЖИ тек ұсыныс береді. <b>Соңғы баға мен шешім — оқытушыда.</b></p>
+  <p class="mute">Өлшем · «ЖИ-әзірлемелер – 2026» · Л.Н. Гумилев атындағы ЕҰУ · <a href="/docs" target="_blank" rel="noopener">API құжаттамасы</a></p>
+</footer>
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
