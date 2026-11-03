@@ -215,17 +215,55 @@ def soffice_available() -> bool:
     return shutil.which("soffice") is not None
 
 
+# 1x1 images: the frame size of a picture is stored in the document XML, not in the image,
+# so swapping the pixels keeps the layout (and the page count) identical while LibreOffice
+# needs a fraction of the memory — important on small (512 MB) cloud instances.
+_TINY_PNG = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+                          "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")
+_TINY_JPG = bytes.fromhex(
+    "ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720"
+    "222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405"
+    "060708090a0bffc400b5100002010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433627282"
+    "090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a92939495"
+    "969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffda0008"
+    "010100003f00fbd3ffd9")
+
+
+def _light_copy(path: pathlib.Path, workdir: pathlib.Path) -> pathlib.Path:
+    """Copy of a .docx with every embedded raster image replaced by a 1x1 placeholder."""
+    import zipfile
+    if path.suffix.lower() != ".docx":
+        return path
+    dst = workdir / path.name
+    try:
+        with zipfile.ZipFile(path) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                low = item.filename.lower()
+                if low.startswith("word/media/"):
+                    if low.endswith(".png"):
+                        data = _TINY_PNG
+                    elif low.endswith((".jpg", ".jpeg")):
+                        data = _TINY_JPG
+                zout.writestr(item, data)
+        return dst
+    except Exception:  # noqa: BLE001 — fall back to the original file
+        return path
+
+
 def render_pdf(path: str | pathlib.Path) -> pathlib.Path | None:
     """Convert to PDF with LibreOffice. Serialised with a lock: concurrent soffice runs that
     share a profile corrupt each other."""
     if not soffice_available():
         return None
+    path = pathlib.Path(path)
     out = pathlib.Path(tempfile.mkdtemp(prefix="olshem_pdf_"))
+    src = _light_copy(path, pathlib.Path(tempfile.mkdtemp(prefix="olshem_light_")))
     profile = pathlib.Path(tempfile.gettempdir()) / "olshem_lo_profile"
     with _lo_lock:
         subprocess.run(["soffice", f"-env:UserInstallation=file://{profile}", "--headless",
-                        "--convert-to", "pdf", "--outdir", str(out), str(path)],
-                       capture_output=True, timeout=240)
+                        "--convert-to", "pdf", "--outdir", str(out), str(src)],
+                       capture_output=True, timeout=300)
     return next(out.glob("*.pdf"), None)
 
 
