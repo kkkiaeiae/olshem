@@ -4,6 +4,7 @@ result of a real AI run) and three clearly labelled synthetic works for the clas
 No other student's work is ever included."""
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import uuid
@@ -20,6 +21,7 @@ from . import demo, jobs
 from .synthetic import REFS_SORTED, Spec, make_work
 
 log = logging.getLogger("olshem.seed")
+SYNTHETIC_NOTE = "Синтетикалық үлгі: мәтін жасанды, сондықтан тек бағдарламалық тексеру жүргізілді."
 
 SYNTHETIC = [
     ("Синтетикалық үлгі №1", Spec(body_paras=170, seed=11)),
@@ -65,6 +67,16 @@ def _seed(s: Session) -> None:
                          review_json=cache["review"], compliance_pct=compliance_pct(rules),
                          ai_score=cache["review"].get("suggested_score"), model_used=cache["model"],
                          demo=True, finished_at=now()))
+    pre = settings.demo_dir / "synthetic.json"
+    if pre.exists():  # pre-computed at image build time (services/seed_build.py)
+        for item in json.loads(pre.read_text(encoding="utf-8")):
+            s.add(Submission(assignment_id=a.id, student_label=item["label"], kind="docx",
+                             original_name="synthetic.docx", status="done",
+                             format_result_json=item["format_results"], meta_json=item["meta"],
+                             compliance_pct=compliance_pct(merge_rules(item["format_results"], None, cl)),
+                             ai_error=SYNTHETIC_NOTE, finished_at=now()))
+        s.commit()
+        return
     ids = []
     for label, spec in SYNTHETIC:
         p = make_work(settings.upload_dir / f"{uuid.uuid4().hex}.docx", spec)
@@ -85,7 +97,7 @@ def _run_synthetic(sub_id: str, aid: int) -> None:
     try:
         out = analyze("docx", [path], cl, Materials(),
                       on_stage=lambda st: jobs._set(sub_id, status=st),
-                      skip_ai="Синтетикалық үлгі: мәтін жасанды, сондықтан тек бағдарламалық тексеру жүргізілді.")
+                      skip_ai=SYNTHETIC_NOTE)
         jobs._finish(sub_id, cl, out.format_results, out.meta, None, None, out.ai_error, None)
     except Exception as e:  # noqa: BLE001
         log.exception("synthetic seed failed")
