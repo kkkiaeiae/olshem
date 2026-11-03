@@ -19,6 +19,9 @@ COPY olshem ./olshem
 COPY demo ./demo
 COPY scripts ./scripts
 
+# pre-compute demo data (synthetic works) so cold starts are instant
+RUN python -m olshem.services.seed_build
+
 # Hugging Face Spaces runs the container as uid 1000
 RUN chmod -R a+rX /app && useradd -m -u 1000 app && mkdir -p /app/data && chown -R app:app /app/data
 USER app
