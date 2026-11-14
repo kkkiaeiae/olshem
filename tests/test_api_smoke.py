@@ -32,7 +32,7 @@ def wait(client, url, done, timeout=120):
 
 def test_full_flow(client, checklist, monkeypatch, tmp_path):
     monkeypatch.setattr(jobs, "extract_checklist",
-                        lambda files, text: (Checklist.model_validate(checklist), "mock-extract"))
+                        lambda files, text, **k: (Checklist.model_validate(checklist), "mock-extract"))
     quote = "Деректер базасы ұйымның ақпаратын бір жерде сақтап"
 
     def fake_review(text, images, cl, fmt, *a, **k):

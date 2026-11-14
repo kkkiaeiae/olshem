@@ -52,9 +52,9 @@ def run_extraction(assignment_id: int) -> None:
             time.sleep(1.0)
             cl, model = Checklist.model_validate(cached), "демо кэш"
         else:
-            if not m.requirement_files and not m.requirement_text.strip():
-                raise ValueError("Талап файлы да, мәтіні де жоқ")
-            cl, model = extract_checklist(m.requirement_files, m.requirement_text)
+            if not m.requirement_files and not m.requirement_text.strip() and not m.syllabus_file:
+                raise ValueError("Талап файлы да, мәтіні де, силлабус та жоқ")
+            cl, model = extract_checklist(m.requirement_files, m.requirement_text, syllabus=m.syllabus_file)
         if not cl.assignment:
             cl.assignment = title
         with session_scope() as s:

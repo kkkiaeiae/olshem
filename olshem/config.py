@@ -51,6 +51,18 @@ class Settings:
         "judge": _list("MODELS_JUDGE", ["gemini-pro-latest", "gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest"]),
     }
     llm_timeout_s = {"extract": 90, "ocr": 90, "judge": 150}
+    # When set, changing the AI provider / key via /api/settings/ai also needs X-Admin-Token.
+    admin_token: str | None = os.environ.get("ADMIN_TOKEN") or None
+    # Rate limits: max requests per client IP within `rate_window_s` (in-memory, per process).
+    rate_window_s = int(os.environ.get("RATE_WINDOW_S", "600"))
+    rate_limits = {
+        "submit": int(os.environ.get("RATE_SUBMIT", "12")),
+        "assign": int(os.environ.get("RATE_ASSIGN", "6")),
+        "ai_test": int(os.environ.get("RATE_AI_TEST", "10")),
+    }
+    # How many reverse proxies (Render, HF) sit in front of the app: the client IP is taken from
+    # X-Forwarded-For counting this many hops from the right (0 = ignore the header).
+    trust_proxy_hops = int(os.environ.get("TRUST_PROXY_HOPS", "1"))
 
     @property
     def upload_dir(self) -> pathlib.Path:

@@ -4,7 +4,8 @@ from sqlmodel import Session, func, select
 
 from ..core.requirements import Checklist
 from ..models.entities import Assignment, Course, Submission, aware, now
-from ..models.schemas import AssignmentOut, CourseOut, StageOut, SubmissionOut
+from ..core.scoring import merge_rules
+from ..models.schemas import AssignmentOut, CourseOut, PreviousOut, StageOut, SubmissionOut
 
 STAGES = [("checklist", "Талаптар"), ("format", "Рәсімдеу"), ("review", "Мазмұн"), ("report", "Есеп")]
 OCR_STAGE = ("ocr", "Қолжазба")
@@ -48,6 +49,42 @@ def stages(sub: Submission) -> list[StageOut]:
     return out
 
 
+PROBLEM = ("сәйкес емес", "ішінара")
+
+
+def label_key(label: str | None) -> str:
+    """Case/space-insensitive key for matching a student's versions. Done in Python because
+    SQLite's lower() only folds ASCII and the labels are Kazakh / Russian names."""
+    return " ".join((label or "").split()).casefold()
+
+
+def _problems(sub: Submission, checklist: dict) -> dict[str, str]:
+    """rule id -> text of every rule that is not satisfied (optional rules excluded)."""
+    rules = merge_rules(sub.format_result_json or [], sub.review_json, checklist)
+    return {r["id"]: r.get("text_kk") or r["id"] for r in rules
+            if r.get("status") in PROBLEM and not r.get("optional")}
+
+
+def compare_previous(s: Session, sub: Submission) -> PreviousOut | None:
+    key = label_key(sub.student_label)
+    if sub.status != "done" or not key:
+        return None
+    rows = s.exec(select(Submission).where(Submission.assignment_id == sub.assignment_id,
+                                           Submission.status == "done", Submission.id != sub.id,
+                                           Submission.created_at < sub.created_at)
+                  .order_by(Submission.created_at.desc())).all()
+    prev = next((x for x in rows if label_key(x.student_label) == key), None)
+    if not prev:
+        return None
+    a = s.get(Assignment, sub.assignment_id)
+    cl = (a.checklist_json if a else None) or {"rules": []}
+    before, after = _problems(prev, cl), _problems(sub, cl)
+    fixed = [before[k] for k in before if k not in after]
+    return PreviousOut(id=prev.id, compliance_pct=prev.compliance_pct, ai_score=prev.ai_score,
+                       fixed=len(fixed), new_problems=sum(1 for k in after if k not in before),
+                       fixed_rules=fixed[:8], created_at=aware(prev.created_at))
+
+
 def submission_out(s: Session, sub: Submission, with_results: bool = False) -> SubmissionOut:
     a = s.get(Assignment, sub.assignment_id)
     end = aware(sub.finished_at) or now()
@@ -64,4 +101,5 @@ def submission_out(s: Session, sub: Submission, with_results: bool = False) -> S
         report_url=f"/api/submissions/{sub.id}/report" if sub.status == "done" else None,
         created_at=aware(sub.created_at), finished_at=aware(sub.finished_at),
         results={"format_results": sub.format_result_json, "review": sub.review_json, "meta": sub.meta_json,
-                 "ocr": sub.ocr_json} if with_results and sub.status == "done" else None)
+                 "ocr": sub.ocr_json} if with_results and sub.status == "done" else None,
+        previous=compare_previous(s, sub))

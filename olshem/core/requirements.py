@@ -70,11 +70,18 @@ Rules:
 - Everything about meaning/quality (goal stated in introduction, conclusions match tasks, literature review, figures referenced in text, topic agreed with syllabus, code/SQL correctness) -> check="ai", metric="none".
 - text_kk: short clear Kazakh sentence. source_quote: verbatim fragment of the source.
 - id: "rule-1", "rule-2", ...
+- A SYLLABUS may be given as well (or alone). Take from it only what concerns the written work (its type, volume, deadlines are not rules). If it contains a list of approved topics for this kind of work, add ONE ai rule: "Жұмыс тақырыбы силлабустағы бекітілген тақырыптар тізіміне сәйкес келуі керек" (severity маңызды), with source_quote from that list.
+- If only a syllabus is given and it states no formatting rules, do not invent them: return only what it actually requires.
 - severity: критикалық = work is not accepted without it; маңызды = affects grade; ұсыныс = recommendation."""
 
 
-def extract_checklist(files: list[str | pathlib.Path], text: str = "", note: str = "") -> tuple[Checklist, str]:
-    parts: list = [file_part(f) for f in files]
+def extract_checklist(files: list[str | pathlib.Path], text: str = "", note: str = "",
+                      syllabus: str | pathlib.Path | None = None) -> tuple[Checklist, str]:
+    parts: list = []
+    for f in files:
+        parts += ["ОҚЫТУШЫНЫҢ ТАЛАПТАРЫ (файл):", file_part(f)]
+    if syllabus:
+        parts += ["СИЛЛАБУС:", file_part(syllabus)]
     if text.strip():
         parts.append("ОҚЫТУШЫНЫҢ ТАЛАПТАРЫ (мәтін):\n" + text.strip())
     parts.append("Оқытушының қосымша ескертпесі: " + (note.strip() or "жоқ"))

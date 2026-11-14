@@ -11,7 +11,7 @@ from ..models.db import get_session, session_scope
 from ..models.entities import Assignment, Course, Submission
 from ..models.schemas import SubmissionOut
 from ..services import jobs, storage
-from ..services.serializers import submission_out
+from ..services.serializers import compare_previous, submission_out
 from .deps import User, current_user, require_teacher
 
 router = APIRouter(prefix="/api/submissions", tags=["Жұмыстар"])
@@ -65,7 +65,8 @@ def report(sid: str, embed: bool = False, s: Session = Depends(get_session)):
         title = f"{sub.student_label} — {sub.original_name}"
     html = render(title, f"{c.name} · {a.title}", sub.format_result_json or [], sub.review_json,
                   sub.meta_json or {}, sub.model_used, cl, demo=sub.demo, ai_error=sub.ai_error,
-                  ocr=sub.ocr_json, checked_at=sub.finished_at, embed=embed)
+                  ocr=sub.ocr_json, checked_at=sub.finished_at, embed=embed,
+                  previous=(p.model_dump() if (p := compare_previous(s, sub)) else None))
     return HTMLResponse(html, headers={"X-Robots-Tag": "noindex"})
 
 

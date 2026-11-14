@@ -32,3 +32,14 @@ def rule():
         base.update(kw)
         return {"rules": [base]}
     return make
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_state():
+    """Rate-limit counters and the runtime AI config are process-global: reset around each test."""
+    from olshem.core import llm
+    from olshem.services import ratelimit
+    ratelimit.reset()
+    yield
+    ratelimit.reset()
+    llm.configure(None)

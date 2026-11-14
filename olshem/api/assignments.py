@@ -13,7 +13,7 @@ from ..core.requirements import METRICS
 from ..models.db import get_session
 from ..models.entities import ASSIGNMENT_TYPES, Assignment, Course, Submission
 from ..models.schemas import AssignmentOut, ChecklistUpdate, CourseOut, StatsOut, SubmissionOut
-from ..services import demo, jobs, storage
+from ..services import demo, jobs, ratelimit, storage
 from ..services.serializers import assignment_out, submission_out
 from ..services.stats import assignment_stats
 from .deps import User, current_user, require_teacher
@@ -48,12 +48,14 @@ async def create_assignment(
     requirement_files: list[UploadFile] = File(default=[], description="ПОӘК / талаптар: PDF немесе фото"),
     syllabus_file: Optional[UploadFile] = File(None, description="Силлабус PDF (міндетті емес)"),
     s: Session = Depends(get_session), _: User = Depends(require_teacher),
+    __: None = Depends(ratelimit.limit("assign")),
 ):
     if type not in ASSIGNMENT_TYPES:
         raise HTTPException(422, f"Тапсырма түрі: {', '.join(ASSIGNMENT_TYPES)}")
     files = [f for f in requirement_files if f and f.filename]
-    if not files and not requirement_text.strip():
-        raise HTTPException(422, "Талаптар файлын жүктеңіз немесе мәтінін жазыңыз")
+    has_syllabus = bool(syllabus_file and syllabus_file.filename)
+    if not files and not requirement_text.strip() and not has_syllabus:
+        raise HTTPException(422, "Кемінде біреуін беріңіз: талаптар файлы, талаптар мәтіні немесе силлабус")
     if len(files) > 10:
         raise HTTPException(422, "Ең көбі 10 талап файлы")
     stored = [(await storage.save_upload(f, REQ_EXT))[0].name for f in files]
@@ -137,8 +139,10 @@ def delete_assignment(aid: int, s: Session = Depends(get_session), _: User = Dep
 async def create_submission(
     aid: int,
     files: list[UploadFile] = File(..., description="Бір .docx/.pdf немесе бірнеше фото (беттер ретімен)"),
-    student_label: str = Form("", description="Студенттің аты немесе коды (модельге жіберілмейді)"),
+    student_label: str = Form("", description="Студенттің аты немесе коды (модельге жіберілмейді). "
+                                                "Бірдей белгімен қайта жіберсе, алдыңғы нұсқамен салыстырылады"),
     s: Session = Depends(get_session), _: User = Depends(current_user),
+    __: None = Depends(ratelimit.limit("submit")),
 ):
     a = _get(s, aid)
     if not a.checklist_confirmed:
@@ -156,7 +160,7 @@ async def create_submission(
     else:
         kind = "pdf" if exts == {".pdf"} else "docx"
     saved = [await storage.save_upload(f, WORK_EXT) for f in files]
-    sub = Submission(assignment_id=aid, student_label=student_label.strip()[:80], kind=kind,
+    sub = Submission(assignment_id=aid, student_label=" ".join(student_label.split())[:80], kind=kind,
                      file_paths=[p.name for p, _, _ in saved], file_path=saved[0][0].name,
                      original_name=", ".join(n for _, n, _ in saved)[:200], file_sha256=saved[0][2])
     s.add(sub); s.commit(); s.refresh(sub)
@@ -166,7 +170,8 @@ async def create_submission(
 
 @router.post("/assignments/{aid}/submissions/sample", response_model=SubmissionOut, status_code=202,
              summary="Демо: ашық үлгі жұмысты (emhana.docx) тексеруге жіберу")
-def create_sample_submission(aid: int, s: Session = Depends(get_session), _: User = Depends(current_user)):
+def create_sample_submission(aid: int, s: Session = Depends(get_session), _: User = Depends(current_user),
+                             __: None = Depends(ratelimit.limit("submit"))):
     a = _get(s, aid)
     if not a.checklist_confirmed:
         raise HTTPException(409, "Оқытушы тексеру тізімін әлі растаған жоқ")

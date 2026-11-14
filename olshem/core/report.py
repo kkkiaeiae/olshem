@@ -46,7 +46,7 @@ CSS = """
 .tools{display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px}
 .tools button{font:inherit;font-size:13px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:5px 12px;cursor:pointer}
 .banner{border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:14px;border:1px solid var(--line)}
-.banner.demo{background:var(--warnbg);color:var(--warn)}.banner.part{background:var(--nabg);color:var(--ink)}
+.banner.demo{background:var(--warnbg);color:var(--warn)}.banner.cmp{background:var(--okbg);color:var(--ink)}.banner.part{background:var(--nabg);color:var(--ink)}
 header{display:flex;gap:22px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px}
 .ring{--p:0;width:112px;height:112px;border-radius:50%;flex:none;display:grid;place-items:center;
 background:conic-gradient(var(--accent) calc(var(--p)*1%),var(--line) 0)}
@@ -108,7 +108,7 @@ def _ocr_html(ocr: dict) -> str:
 def render(title: str, course: str, fmt_results: list[dict], review: dict | None, meta: dict,
            model: str | None, checklist: dict, *, demo: bool = False, ai_error: str | None = None,
            ocr: dict | None = None, checked_at: datetime.datetime | None = None,
-           standalone: bool = True, embed: bool = False) -> str:
+           standalone: bool = True, embed: bool = False, previous: dict | None = None) -> str:
     review = review or {}
     rules = merge_rules(fmt_results, review, checklist)
     counts = {k: sum(1 for r in rules if r["status"] == k) for k in STATUS}
@@ -152,6 +152,19 @@ def render(title: str, course: str, fmt_results: list[dict], review: dict | None
     if ai_error:
         banners += (f"<div class='banner part'><b>ЖИ кезеңі орындалмады:</b> {e(ai_error)}<br>"
                     "Рәсімдеу талаптары бағдарламамен толық тексерілді; мазмұнды кейінірек қайта тексеруге болады.</div>")
+    if previous:
+        def delta(a, b, unit=""):
+            if a is None or b is None:
+                return ""
+            d = a - b
+            return f" <b>{'↑' if d > 0 else '↓' if d < 0 else '='}{abs(d) if d else ''}{unit if d else ''}</b>"
+        fixed = "".join(f"<li>{e(t)}</li>" for t in previous.get("fixed_rules", []))
+        prev_when = to_local(previous.get("created_at")).strftime("%d.%m.%Y %H:%M") if previous.get("created_at") else ""
+        banners += (f"<div class='banner cmp'><b>Алдыңғы нұсқамен салыстыру</b> ({e(prev_when)}): "
+                    f"сәйкестік {e(previous.get('compliance_pct'))}% → {e(compliance)}%"
+                    f"{delta(compliance, previous.get('compliance_pct'), '%')}; "
+                    f"түзетілді — {e(previous.get('fixed', 0))}, жаңа мәселе — {e(previous.get('new_problems', 0))}."
+                    + (f"<ul class='det'>{fixed}</ul>" if fixed else "") + "</div>")
     ring_ai = (f"<div class='ring ai' style='--p:{score}'><div><span><b>{score}</b><small>мазмұн<br>(ЖИ ұсынысы)</small></span></div></div>"
                if score is not None else
                "<div class='ring ai' style='--p:0'><div><span><b>—</b><small>мазмұн<br>бағаланбады</small></span></div></div>")
