@@ -148,6 +148,17 @@ def all_models() -> list[str]:
 
 
 # ---------------------------------------------------------------- Gemini
+# google-genai 3.x switched its default from v1beta to v1, where the `*-latest` aliases and some
+# preview models do not exist (404) and requests time out (504). Pin the version explicitly.
+GEMINI_API_VERSION = "v1beta"
+
+
+def new_gemini_client(api_key: str):
+    from google import genai
+    from google.genai import types
+    return genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version=GEMINI_API_VERSION))
+
+
 def client():
     """google-genai client for the active Gemini config."""
     cfg = current()
@@ -156,8 +167,7 @@ def client():
     global _client
     with _client_lock:
         if _client is None:
-            from google import genai
-            _client = genai.Client(api_key=cfg.api_key)
+            _client = new_gemini_client(cfg.api_key)
     return _client
 
 
@@ -276,8 +286,7 @@ def probe_with(cfg: AIConfig, models: list[str]) -> dict[str, dict[str, Any]]:
         return {m: {"status": "no_key"} for m in models}
     gem = None
     if cfg.provider == "gemini":
-        from google import genai
-        gem = genai.Client(api_key=cfg.api_key)
+        gem = new_gemini_client(cfg.api_key)
     res: dict[str, dict[str, Any]] = {}
     for m in models:
         t0 = time.time()

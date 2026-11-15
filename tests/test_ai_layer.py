@@ -91,3 +91,16 @@ def test_all_models_fail(monkeypatch):
 def test_no_key_is_readable():
     with pytest.raises(llm.LLMUnavailable, match="GEMINI_API_KEY"):
         llm.client()
+
+
+def test_gemini_client_pins_api_version(monkeypatch):
+    """google-genai 3.x defaults to API v1 (no `*-latest` aliases there -> 404). We must pin v1beta."""
+    from google import genai
+    seen = {}
+
+    class FakeClient:
+        def __init__(self, **kw):
+            seen.update(kw)
+    monkeypatch.setattr(genai, "Client", FakeClient)
+    llm.new_gemini_client("k")
+    assert seen["http_options"].api_version == "v1beta"
