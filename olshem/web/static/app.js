@@ -13,10 +13,14 @@ const clearTimers = () => { timers.forEach(clearInterval); timers = []; };
 const store = {
   get role() { try { return localStorage.getItem("olshem-role") || ""; } catch { return ""; } },
   set role(v) { try { localStorage.setItem("olshem-role", v); } catch {} },
+  // admin token lives only for this browser tab (sessionStorage), never in localStorage
+  get admin() { try { return sessionStorage.getItem("olshem-admin") || ""; } catch { return ""; } },
+  set admin(v) { try { v ? sessionStorage.setItem("olshem-admin", v) : sessionStorage.removeItem("olshem-admin"); } catch {} },
 };
 
 async function api(path, { method = "GET", json, form } = {}) {
   const headers = { "X-Role": store.role || "student" };
+  if (store.admin && path.startsWith("/api/settings")) headers["X-Admin-Token"] = store.admin;
   let body;
   if (json !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(json); }
   if (form) body = form;
@@ -63,6 +67,14 @@ const typeSuffix = (a, size) => {
   const t = TYPES[a.type] || a.type;
   return t.toLowerCase() === a.title.trim().toLowerCase() ? "" : ` <span class="mute" style="font-weight:400${size ? ";font-size:" + size + "px" : ""}">· ${esc(t)}</span>`;
 };
+function cmpChip(s) {
+  const p = s.previous;
+  if (!p || p.compliance_pct == null || s.compliance_pct == null) return "";
+  const d = s.compliance_pct - p.compliance_pct;
+  const cls = d > 0 ? "ok" : d < 0 ? "bad" : "na";
+  const txt = d > 0 ? `↑${d}` : d < 0 ? `↓${-d}` : "=";
+  return ` <span class="chip ${cls}" title="Алдыңғы нұсқа: ${p.compliance_pct}% · түзетілді ${p.fixed}, жаңа мәселе ${p.new_problems}">${txt}</span>`;
+}
 const pct = (v) => (v === null || v === undefined) ? "—" : `${Math.round(v)}%`;
 const scoreTxt = (v) => (v === null || v === undefined) ? "—" : `${v}`;
 
@@ -89,6 +101,7 @@ const routes = [
   [/^#?\/?$/, home],
   [/^#\/t$/, teacherHome],
   [/^#\/t\/new$/, newAssignment],
+  [/^#\/t\/settings$/, aiSettings],
   [/^#\/t\/a\/(\d+)(?:\/(\w+))?$/, teacherAssignment],
   [/^#\/s$/, studentHome],
   [/^#\/s\/a\/(\d+)$/, studentAssignment],
@@ -143,7 +156,7 @@ async function teacherHome() {
   const aiLine = health ? (health.ai_configured ? (Object.values(health.models).some((m) => m.status === "ok") ? `<span class="chip ok">ЖИ қолжетімді</span>` : `<span class="chip na">ЖИ күйі тексерілмеген</span>`) : `<span class="chip bad">ЖИ кілті орнатылмаған</span>`) : "";
   view().innerHTML = `
   <div class="page-head"><div><div class="crumbs">Оқытушы</div><h1>Тапсырмалар</h1></div>
-    <a class="btn primary" href="#/t/new">+ Жаңа тапсырма</a></div>
+    <div class="row"><a class="btn" href="#/t/settings">⚙ ЖИ баптаулары</a><a class="btn primary" href="#/t/new">+ Жаңа тапсырма</a></div></div>
   <div class="stack">${list.length ? list.map((a) => `
     <a class="card list-item" href="#/t/a/${a.id}">
       <div><div class="meta">${esc(a.course.name)}${a.course.code ? " · " + esc(a.course.code) : ""}</div>
@@ -203,14 +216,14 @@ async function newAssignment() {
     <div class="field"><label class="f" for="rt">Немесе талаптарды мәтінмен жазыңыз</label>
       <textarea id="rt" placeholder="Мысалы: Көлемі 8–10 бет. Times New Roman, 14 pt, интервал 1,0. Кіріспе, негізгі бөлім, қорытынды және кемінде 5 дереккөз болуы керек."></textarea></div>
     <div class="row"><button class="btn primary" id="go" type="submit">Талаптарды талдау</button>
-      <span class="hint">ЖИ талаптарды тексеру тізіміне айналдырады (10–20 секунд). Тізімді кейін өзіңіз түзетіп, растайсыз.</span></div>
+      <span class="hint">Талаптар файлы, мәтіні немесе силлабустың кемінде біреуі жеткілікті. ЖИ оларды тексеру тізіміне айналдырады (10–20 секунд); тізімді кейін өзіңіз түзетіп, растайсыз.</span></div>
   </form>`;
   const reqFiles = bindDrop($("#reqDrop")), sylFiles = bindDrop($("#sylDrop"));
   $("#f").onsubmit = async (e) => {
     e.preventDefault();
     const cn = $("#cn").value.trim(), ti = $("#ti").value.trim();
     if (!cn || !ti) return toast("Пән атауы мен тапсырма атауын толтырыңыз", true);
-    if (!reqFiles().length && !$("#rt").value.trim()) return toast("Талаптар файлын жүктеңіз немесе мәтінін жазыңыз", true);
+    if (!reqFiles().length && !$("#rt").value.trim() && !sylFiles().length) return toast("Кемінде біреуін беріңіз: талаптар файлы, мәтіні немесе силлабус", true);
     const fd = new FormData();
     fd.append("course_name", cn); fd.append("course_code", $("#cc").value.trim()); fd.append("title", ti);
     fd.append("type", $("#ty").value); if ($("#dl").value) fd.append("deadline", $("#dl").value);
@@ -360,7 +373,7 @@ async function subsTab(a) {
         <td data-l="Студент"><b>${esc(s.student_label || "—")}</b>${s.demo ? ` <span class="chip warn">демо</span>` : ""}</td>
         <td data-l="Файл" class="meta">${esc(s.original_name)}</td>
         <td data-l="Күйі">${statusChip(s)}</td>
-        <td data-l="Сәйкестік" class="num">${pct(s.compliance_pct)}</td>
+        <td data-l="Сәйкестік" class="num">${pct(s.compliance_pct)}${cmpChip(s)}</td>
         <td data-l="Мазмұн (ЖИ)" class="num" title="${s.ai_error ? esc(s.ai_error) : "ЖИ ұсынысы, соңғы баға сізде"}">${scoreTxt(s.ai_score)}</td>
         <td data-l="Ескерту" class="num">${s.status === "done" ? s.problems : "—"}</td>
         <td data-l="Уақыты" class="meta">${fmtTime(s.created_at)}</td>
@@ -405,6 +418,117 @@ async function statsTab(a) {
 }
 
 // ------------------------------------------------------------------ student
+// ------------------------------------------------------------------ teacher: AI settings
+const STAGE_LABEL = { extract: "① Талаптар → тізім", ocr: "③ Қолжазба OCR", judge: "④ Мазмұнды бағалау" };
+const ENDPOINTS = [
+  ["https://api.openai.com/v1", "OpenAI"], ["https://api.deepseek.com/v1", "DeepSeek"],
+  ["https://openrouter.ai/api/v1", "OpenRouter"], ["https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "Qwen (DashScope)"],
+  ["http://localhost:11434/v1", "Ollama (жергілікті)"]];
+const MODEL_STATUS = { ok: ["ok", "жауап берді"], quota: ["bad", "квота жоқ (429)"], not_found: ["bad", "модель табылмады"],
+  forbidden: ["bad", "рұқсат жоқ"], unauthorized: ["bad", "кілт қате"], overloaded: ["warn", "уақытша бос емес (503)"],
+  error: ["bad", "қате"], no_key: ["bad", "кілт жоқ"], unknown: ["na", "тексерілмеген"] };
+
+async function aiSettings() {
+  let cfg = await api("/api/settings/ai");
+  const health = await api("/api/health").catch(() => null);
+  const presetModels = (prov) => cfg.presets.find((p) => p.provider === prov)?.models || cfg.models;
+  const statusChip = (st) => { const [c, t] = MODEL_STATUS[st] || ["na", st]; return `<span class="chip ${c}">${esc(t)}</span>`; };
+  view().innerHTML = `
+  <div class="page-head"><div><div class="crumbs"><a href="#/t">Тапсырмалар</a> /</div><h1>ЖИ баптаулары</h1>
+    <div class="meta">Қай провайдер мен модельдер қолданылатынын осы жерде өзгертесіз. Кілт тек серверде сақталады.</div></div></div>
+    ${!cfg.editable ? `<div class="banner warn"><b>Тек қарау режимі.</b> Серверде <code>ADMIN_TOKEN</code> орнатылмаған, сондықтан қауіпсіздік үшін
+      ЖИ баптауларын интерфейстен өзгерту өшірулі (әйтпесе кез келген адам «оқытушы» рөлін таңдап, жұмыстарды өз серверіне бағыттай алар еді).
+      Әкімші серверге ADMIN_TOKEN орта айнымалысын қосқанда, мұнда өзгертуге болады.</div>` : ""}
+  <form class="card" id="f" novalidate>
+    <div class="grid2">
+      <div class="field"><label class="f" for="pv">Провайдер</label>
+        <select id="pv"><option value="gemini">Google Gemini</option><option value="openai">OpenAI-үйлесімді API (OpenAI, DeepSeek, OpenRouter, Qwen, Ollama…)</option></select></div>
+      <div class="field" id="urlBox"><label class="f" for="bu">API мекенжайы (base URL)</label>
+        <input type="text" id="bu" list="eps" placeholder="https://api.openai.com/v1">
+        <datalist id="eps">${ENDPOINTS.map(([u, n]) => `<option value="${u}">${n}</option>`).join("")}</datalist>
+        <div class="hint">OpenAI-үйлесімді режимде PDF тек мәтін ретінде жіберіледі (сканерленген PDF оқылмайды).</div></div>
+    </div>
+    <div class="field"><label class="f" for="key">API кілті</label>
+      <input type="password" id="key" autocomplete="off" spellcheck="false">
+      <div class="hint" id="keyHint"></div></div>
+    <h2 style="margin-top:8px">Модельдер тізбегі</h2>
+    <p class="hint" style="margin-top:0">Әр кезеңге бірнеше модель — үтір арқылы, ретімен. Біріншісі жауап бермесе, келесісі қолданылады.</p>
+    ${["extract", "ocr", "judge"].map((st) => `<div class="field"><label class="f" for="m_${st}">${STAGE_LABEL[st]}</label>
+      <input type="text" id="m_${st}" spellcheck="false"></div>`).join("")}
+    ${cfg.admin_token_required ? `<div class="field"><label class="f" for="adm">Әкімші токені</label>
+      <input type="password" id="adm" autocomplete="off"><div class="hint">Серверде ADMIN_TOKEN орнатылған: өзгерту үшін қажет. Тек осы бетте сақталады.</div></div>` : ""}
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="btn" type="button" id="test">Тексеру (сақтамай)</button>
+      <button class="btn primary" type="submit" id="save">Сақтау</button>
+      <button class="btn ghost" type="button" id="reset" ${cfg.source === "env" ? "disabled" : ""}>Әдепкіге қайту</button>
+      <span class="hint" id="src"></span></div>
+    <div id="testOut" style="margin-top:14px"></div>
+  </form>
+  <div class="card" style="margin-top:18px"><h2 style="margin-top:0">Қазіргі күйі</h2><div id="now"></div></div>`;
+
+  const fill = () => {
+    $("#pv").value = cfg.provider; $("#bu").value = cfg.base_url || "";
+    for (const st of ["extract", "ocr", "judge"]) $(`#m_${st}`).value = (cfg.models[st] || []).join(", ");
+    $("#key").value = "";
+    $("#key").placeholder = cfg.key_set ? `Сақталған кілт: ${cfg.key_hint} — өзгертпесеңіз бос қалдырыңыз` : "Кілтті енгізіңіз";
+    $("#keyHint").textContent = "Кілт браузерге қайтарылмайды: тек соңғы 4 таңбасы көрінеді. Провайдер ауысса, жаңа кілт керек.";
+    $("#urlBox").hidden = cfg.provider !== "openai";
+    $("#src").textContent = cfg.source === "env" ? "Қазір орта айнымалыларындағы (сервер) баптаулар қолданылуда." : "Қазір осы бетте сақталған баптаулар қолданылуда.";
+    if ($("#adm")) $("#adm").value = store.admin;
+    const h = health;
+    $("#now").innerHTML = h ? `<p class="meta" style="margin-top:0">Провайдер: <b>${esc(h.ai_provider)}</b> · ЖИ ${h.ai_configured ? "бапталған" : "бапталмаған"} · LibreOffice ${h.libreoffice ? "бар" : "жоқ"}</p>
+      <table class="tbl"><thead><tr><th>Модель</th><th>Күйі</th><th>Кідіріс</th></tr></thead><tbody>
+      ${Object.entries(h.models).map(([m, v]) => `<tr><td data-l="Модель"><code>${esc(m)}</code></td><td data-l="Күйі">${statusChip(v.status)}</td>
+        <td data-l="Кідіріс" class="num">${v.latency_s != null ? v.latency_s + " с" : "—"}</td></tr>`).join("")}</tbody></table>
+      <p class="hint">Модельдер күйі сервер іске қосылғанда және «Тексеру» кезінде жаңартылады.</p>` : `<p class="mute">Күйін алу мүмкін болмады.</p>`;
+  };
+  fill();
+  if (!cfg.editable) $$("#f input, #f select, #f button").forEach((el) => (el.disabled = true));
+  $("#pv").onchange = () => {
+    const pv = $("#pv").value;
+    $("#urlBox").hidden = pv !== "openai";
+    if (pv === "openai" && !$("#bu").value) $("#bu").value = "https://api.openai.com/v1";
+    if (pv !== cfg.provider) {
+      const m = presetModels(pv);
+      for (const st of ["extract", "ocr", "judge"]) $(`#m_${st}`).value = (m[st] || []).join(", ");
+      $("#key").placeholder = "Жаңа провайдердің кілтін енгізіңіз";
+    } else fill();
+  };
+  const body = () => {
+    if ($("#adm")) store.admin = $("#adm").value.trim();
+    const models = {};
+    for (const st of ["extract", "ocr", "judge"]) models[st] = $(`#m_${st}`).value.split(",").map((x) => x.trim()).filter(Boolean);
+    return { provider: $("#pv").value, base_url: $("#pv").value === "openai" ? $("#bu").value.trim() : null,
+             api_key: $("#key").value.trim() || null, models };
+  };
+  const busy = (btn, on, label) => { btn.disabled = on; btn.innerHTML = on ? `<span class="spinner"></span>${label}` : label; };
+  $("#test").onclick = async () => {
+    busy($("#test"), true, "Тексерілуде…");
+    try {
+      const r = await api("/api/settings/ai/test", { method: "POST", json: body() });
+      $("#testOut").innerHTML = `<div class="banner ${r.ok ? "" : "warn"}" style="margin:0 0 10px">${r.ok ? "<b>Барлық кезеңде кемінде бір модель жауап берді.</b> Сақтауға болады."
+        : "<b>Кейбір кезеңде жауап берген модель жоқ.</b> Модель атауларын, кілтті немесе мекенжайды тексеріңіз."}</div>
+        <table class="tbl"><thead><tr><th>Модель</th><th>Кезең</th><th>Нәтиже</th><th>Кідіріс</th></tr></thead><tbody>
+        ${r.results.map((x) => `<tr><td data-l="Модель"><code>${esc(x.model)}</code></td><td data-l="Кезең" class="meta">${x.stages.map((s) => STAGE_LABEL[s]).join(", ")}</td>
+          <td data-l="Нәтиже">${statusChip(x.status)}${x.detail && x.status !== "ok" ? `<div class="hint">${esc(x.detail.slice(0, 120))}</div>` : ""}</td>
+          <td data-l="Кідіріс" class="num">${x.latency_s != null ? x.latency_s + " с" : "—"}</td></tr>`).join("")}</tbody></table>`;
+    } catch (err) { toast(err.message, true); }
+    busy($("#test"), false, "Тексеру (сақтамай)");
+  };
+  $("#f").onsubmit = async (e) => {
+    e.preventDefault();
+    busy($("#save"), true, "Сақталуда…");
+    try { cfg = await api("/api/settings/ai", { method: "PUT", json: body() }); toast("Сақталды. Жаңа тексерулер осы баптаулармен жүреді."); fill(); $("#reset").disabled = false; }
+    catch (err) { toast(err.message, true); }
+    busy($("#save"), false, "Сақтау");
+  };
+  $("#reset").onclick = async () => {
+    if (!confirm("Сақталған баптауларды (кілтімен бірге) өшіріп, сервердің әдепкі баптауларына қайтамыз ба?")) return;
+    try { cfg = await api("/api/settings/ai", { method: "DELETE" }); toast("Әдепкі баптаулар қолданылуда"); fill(); $("#reset").disabled = true; $("#testOut").innerHTML = ""; }
+    catch (err) { toast(err.message, true); }
+  };
+}
+
 async function studentHome() {
   const list = await api("/api/assignments?confirmed_only=true");
   view().innerHTML = `
@@ -428,7 +552,7 @@ async function studentAssignment(id) {
     <form class="card" id="f">
       <h2>Жұмысты жүктеу</h2>
       <div class="field"><label class="f" for="lbl">Аты-жөніңіз немесе студенттік код <span class="mute">(міндетті емес)</span></label>
-        <input type="text" id="lbl" maxlength="80"><div class="hint">Есепте көрсетіледі. ЖИ-ге жіберілмейді — мәтіннен де жасырылады.</div></div>
+        <input type="text" id="lbl" maxlength="80"><div class="hint">Есепте көрсетіледі. ЖИ-ге жіберілмейді — мәтіннен де жасырылады. Түзетілген нұсқаны дәл осы атпен жіберсеңіз, жүйе оны алдыңғы нұсқамен салыстырады.</div></div>
       <div class="field">${fileDrop("wDrop", { multiple: true, accept: ".docx,.pdf,.jpg,.jpeg,.png,.webp", label: "Файлды осында сүйреңіз немесе таңдаңыз", hint: ".docx (ең дәл), .pdf немесе қолжазба беттерінің фотолары (ретімен) · 20 МБ-қа дейін" })}</div>
       <div class="row"><button class="btn primary" id="go" type="submit" ${a.checklist_confirmed ? "" : "disabled"}>Тексеруге жіберу</button>
         ${a.is_demo && a.checklist_confirmed ? `<button class="btn" id="sample" type="button">Үлгі жұмыспен көру</button>` : ""}</div>

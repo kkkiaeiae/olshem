@@ -14,11 +14,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .api import assignments, submissions, system
+from .api import assignments, settings as settings_api, submissions, system
 from .config import ROOT, settings
 from .core import llm
-from .models.db import init_db
-from .services import jobs, seed
+from .models.db import init_db, session_scope
+from .services import ai_settings, jobs, seed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("olshem")
@@ -28,9 +28,11 @@ WEB = ROOT / "olshem" / "web"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    with session_scope() as s:
+        ai_settings.apply_stored(s)
     seed.seed_if_empty()
     jobs.resume_unfinished()
-    if settings.probe_on_start and settings.gemini_api_key:
+    if settings.probe_on_start and llm.is_configured():
         threading.Thread(target=llm.probe_models, daemon=True).start()
     yield
 
@@ -78,6 +80,7 @@ async def unhandled(_: Request, exc: Exception):
 app.include_router(assignments.router)
 app.include_router(submissions.router)
 app.include_router(system.router)
+app.include_router(settings_api.router)
 app.mount("/static", StaticFiles(directory=WEB / "static"), name="static")
 
 

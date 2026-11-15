@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from .. import __version__
-from ..config import settings
 from ..core import llm
 from ..core.format_checker import soffice_available
 from ..models.db import get_session
@@ -17,15 +16,15 @@ router = APIRouter(prefix="/api", tags=["Жүйе"])
 
 @router.get("/health", response_model=HealthOut, summary="Жүйе күйі және ЖИ модельдерінің қолжетімділігі")
 def health(refresh: bool = False, s: Session = Depends(get_session)):
-    probe = llm.probe_models(force=True) if refresh else dict(llm._probe) or {
-        m: {"status": "no_key" if not settings.gemini_api_key else "unknown"}
-        for m in sorted({m for c in settings.models.values() for m in c})}
-    ai_ok = bool(settings.gemini_api_key) and any(v.get("status") == "ok" for v in probe.values())
+    configured = llm.is_configured()
+    probe = llm.probe_models(force=True) if refresh else llm.probe_snapshot() or {
+        m: {"status": "unknown" if configured else "no_key"} for m in llm.all_models()}
+    ai_ok = configured and any(v.get("status") == "ok" for v in probe.values())
     return HealthOut(
         status="ok" if ai_ok and soffice_available() else "degraded", version=__version__,
-        demo_mode=demo.is_demo_mode(s), ai_configured=bool(settings.gemini_api_key),
+        demo_mode=demo.is_demo_mode(s), ai_configured=configured, ai_provider=llm.current().provider,
         libreoffice=soffice_available(), models={k: ModelStatus(**v) for k, v in probe.items()},
-        stage_chains={k: llm.chain(k) for k in settings.models})
+        stage_chains={k: llm.chain(k) for k in llm.STAGES})
 
 
 @router.get("/demo-mode", response_model=DemoModeIn, summary="Демо режимі қосулы ма")

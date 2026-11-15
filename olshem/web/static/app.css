@@ -52,7 +52,7 @@ button.badge{cursor:pointer}
 .btn[disabled]{opacity:.55;cursor:not-allowed}
 label.f{display:block;font-weight:600;font-size:14px;margin-bottom:4px}
 .hint{font-size:13px;color:var(--mute);margin-top:4px}
-input[type=text],input[type=date],input[type=number],select,textarea{font:inherit;font-size:15px;width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--soft);color:var(--ink)}
+input[type=text],input[type=password],input[type=date],input[type=number],select,textarea{font:inherit;font-size:15px;width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--soft);color:var(--ink)}
 input:focus,select:focus,textarea:focus{border-color:var(--focus);outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 20%,transparent)}
 textarea{min-height:90px;resize:vertical}
 .field{margin-bottom:14px}
